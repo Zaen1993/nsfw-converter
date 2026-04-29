@@ -1,10 +1,15 @@
 name: Convert NSFW Model to TFLite
 
-on: [push, workflow_dispatch]
+on:
+  push:
+    branches:
+      - main  # تأكد أن هذا هو اسم الفرع الرئيسي لديك
+  workflow_dispatch: # يتيح لك تشغيل البناء يدوياً من صفحة Actions
 
 jobs:
   convert:
     runs-on: ubuntu-latest
+    
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -16,31 +21,55 @@ jobs:
 
       - name: Install dependencies
         run: |
-          pip install tensorflow tensorflowjs
+          python -m pip install --upgrade pip
+          # فرض إصدار محدد من protobuf لحل مشكلة التعارض التي واجهتك
+          pip install "protobuf>=5.29.6" tensorflow tensorflowjs
 
       - name: Convert TFJS to Keras (.h5)
         run: |
-          tensorflowjs_converter \
-            --input_format=tfjs_layers_model \
-            --output_format=keras \
-            ./mobilenet_v2 \
-            ./nsfw_model.h5
+          # التأكد من وجود مجلد النموذج قبل البدء
+          if [ -d "./mobilenet_v2" ]; then
+            tensorflowjs_converter \
+              --input_format=tfjs_layers_model \
+              --output_format=keras \
+              ./mobilenet_v2 \
+              ./nsfw_model.h5
+          else
+            echo "❌ Error: Directory ./mobilenet_v2 not found!"
+            exit 1
+          fi
 
-      - name: Convert Keras to TFLite
+      - name: Convert Keras to TFLite (Optimized)
         run: |
           python -c "
           import tensorflow as tf
-          model = tf.keras.models.load_model('./nsfw_model.h5')
+          import os
+
+          if not os.path.exists('./nsfw_model.h5'):
+              print('❌ Error: nsfw_model.h5 was not created!')
+              exit(1)
+
+          # تحميل النموذج بدون عمل compile لسرعة العملية وتفادي أخطاء الطبقات
+          model = tf.keras.models.load_model('./nsfw_model.h5', compile=False)
           converter = tf.lite.TFLiteConverter.from_keras_model(model)
+          
+          # --- إعدادات التقليل السحري للحجم (Optimization) ---
+          # هذا السطر يقلل الحجم من حوالي 16MB إلى 4MB تقريباً
           converter.optimizations = [tf.lite.Optimize.DEFAULT]
+          # لتحسين الأداء على معالجات الموبايل
+          converter.target_spec.supported_types = [tf.float16]
+          
           tflite_model = converter.convert()
-          with open('nsfw_model.tflite', 'wb') as f:
+          
+          with open('nsfw_model_optimized.tflite', 'wb') as f:
               f.write(tflite_model)
-          print('✅ Conversion complete!')
+          
+          print('✅ Conversion & Optimization complete!')
+          print(f'Final size: {os.path.getsize(\"nsfw_model_optimized.tflite\") / (1024*1024):.2f} MB')
           "
 
       - name: Upload TFLite model
         uses: actions/upload-artifact@v4
         with:
-          name: nsfw-model
-          path: nsfw_model.tflite
+          name: nsfw-optimized-model
+          path: nsfw_model_optimized.tflite
