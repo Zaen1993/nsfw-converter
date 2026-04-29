@@ -3,8 +3,8 @@ name: Convert NSFW Model to TFLite
 on:
   push:
     branches:
-      - main  # تأكد أن هذا هو اسم الفرع الرئيسي لديك
-  workflow_dispatch: # يتيح لك تشغيل البناء يدوياً من صفحة Actions
+      - main
+  workflow_dispatch:
 
 jobs:
   convert:
@@ -22,12 +22,16 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          # فرض إصدار محدد من protobuf لحل مشكلة التعارض التي واجهتك
-          pip install "protobuf>=5.29.6" tensorflow tensorflowjs
+          # تثبيت الإصدار المطلوب بالضبط وتجاوز فحص التوافق الصارم
+          pip install protobuf==5.20.0
+          pip install tensorflow tensorflowjs
+          # إعداد المتغير البيئي في بيئة جيثب
+          echo "PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION=python" >> $GITHUB_ENV
 
       - name: Convert TFJS to Keras (.h5)
         run: |
-          # التأكد من وجود مجلد النموذج قبل البدء
+          # تفعيل المتغير البيئي محلياً أيضاً لضمان التشغيل
+          export PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION=python
           if [ -d "./mobilenet_v2" ]; then
             tensorflowjs_converter \
               --input_format=tfjs_layers_model \
@@ -41,6 +45,7 @@ jobs:
 
       - name: Convert Keras to TFLite (Optimized)
         run: |
+          export PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION=python
           python -c "
           import tensorflow as tf
           import os
@@ -49,14 +54,11 @@ jobs:
               print('❌ Error: nsfw_model.h5 was not created!')
               exit(1)
 
-          # تحميل النموذج بدون عمل compile لسرعة العملية وتفادي أخطاء الطبقات
           model = tf.keras.models.load_model('./nsfw_model.h5', compile=False)
           converter = tf.lite.TFLiteConverter.from_keras_model(model)
           
-          # --- إعدادات التقليل السحري للحجم (Optimization) ---
-          # هذا السطر يقلل الحجم من حوالي 16MB إلى 4MB تقريباً
+          # تقنيات الضغط لتقليل الحجم لـ 4 ميجا تقريباً
           converter.optimizations = [tf.lite.Optimize.DEFAULT]
-          # لتحسين الأداء على معالجات الموبايل
           converter.target_spec.supported_types = [tf.float16]
           
           tflite_model = converter.convert()
