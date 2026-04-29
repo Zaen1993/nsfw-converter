@@ -22,15 +22,14 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          # تثبيت الإصدار المطلوب بالضبط وتجاوز فحص التوافق الصارم
-          pip install protobuf==5.20.0
+          # تثبيت المكتبات بدون فرض إصدار محدد للبروتوباف
           pip install tensorflow tensorflowjs
-          # إعداد المتغير البيئي في بيئة جيثب
+          # تفعيل المتغير البيئي لإصدار بايثون لتجاوز تعارض الـ C++ runtime
           echo "PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION=python" >> $GITHUB_ENV
 
       - name: Convert TFJS to Keras (.h5)
         run: |
-          # تفعيل المتغير البيئي محلياً أيضاً لضمان التشغيل
+          # تفعيل المتغير البيئي في هذه الخطوة أيضاً
           export PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION=python
           if [ -d "./mobilenet_v2" ]; then
             tensorflowjs_converter \
@@ -57,7 +56,7 @@ jobs:
           model = tf.keras.models.load_model('./nsfw_model.h5', compile=False)
           converter = tf.lite.TFLiteConverter.from_keras_model(model)
           
-          # تقنيات الضغط لتقليل الحجم لـ 4 ميجا تقريباً
+          # تقنيات الضغط لتقليل الحجم
           converter.optimizations = [tf.lite.Optimize.DEFAULT]
           converter.target_spec.supported_types = [tf.float16]
           
@@ -66,7 +65,7 @@ jobs:
           with open('nsfw_model_optimized.tflite', 'wb') as f:
               f.write(tflite_model)
           
-          print('✅ Conversion & Optimization complete!')
+          print('✅ Conversion complete!')
           print(f'Final size: {os.path.getsize(\"nsfw_model_optimized.tflite\") / (1024*1024):.2f} MB')
           "
 
