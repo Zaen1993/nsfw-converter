@@ -1,0 +1,46 @@
+name: Convert NSFW Model to TFLite
+
+on: [push, workflow_dispatch]
+
+jobs:
+  convert:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Setup Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.10'
+
+    - name: Install dependencies
+      run: |
+        pip install tensorflow tensorflowjs
+
+    - name: Convert TFJS to Keras (.h5)
+      run: |
+        tensorflowjs_converter \
+          --input_format=tfjs_layers_model \
+          --output_format=keras \
+          ./mobilenet_v2 \
+          ./nsfw_model.h5
+
+    - name: Convert Keras to TFLite
+      run: |
+        python -c "
+import tensorflow as tf
+model = tf.keras.models.load_model('./nsfw_model.h5')
+converter = tf.lite.TFLiteConverter.from_keras_model(model)
+# تكميم ديناميكي لتقليل الحجم
+converter.optimizations = [tf.lite.Optimize.DEFAULT]
+tflite_model = converter.convert()
+with open('nsfw_model.tflite', 'wb') as f:
+    f.write(tflite_model)
+print('✅ Conversion complete!')"
+
+    - name: Upload TFLite model
+      uses: actions/upload-artifact@v4
+      with:
+        name: nsfw-model
+        path: nsfw_model.tflite
